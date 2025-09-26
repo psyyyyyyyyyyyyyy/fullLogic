@@ -60,8 +60,14 @@ public class ImageAnalysisService {
             GoogleLensRequestDto request = new GoogleLensRequestDto(imageUrl, favoriteGroup, favoriteName);
             PersonIdentificationResponseDto result = identifyPersonFromImage(request);
             
-            // 3. 분석 완료 후 Cloudinary에서 이미지 삭제
-            deleteFromCloudinary(publicId);
+            // 3. 분석 완료 후 - 일치하는 경우에만 이미지 보관, 불일치하면 삭제
+            if (result.isMatch()) {
+                logger.info("일치하는 이미지이므로 Cloudinary에 보관합니다: {}", publicId);
+                // 이미지를 삭제하지 않고 보관
+            } else {
+                logger.info("불일치하는 이미지이므로 Cloudinary에서 삭제합니다: {}", publicId);
+                deleteFromCloudinary(publicId);
+            }
             
             return result;
             
@@ -234,10 +240,15 @@ public class ImageAnalysisService {
             
             // JSON 응답에서 데이터 추출
             String jsonResponse = gptResponse.getAnswer();
+            logger.info("GPT 원본 응답: {}", jsonResponse);
+            
             String identifiedPerson = extractPersonName(jsonResponse);
             String identifiedGroup = extractGroupName(jsonResponse);
             boolean isMatch = extractMatchResult(jsonResponse);
             String matchReason = extractMatchReason(jsonResponse);
+            
+            logger.info("파싱 결과 - 인물: {}, 그룹: {}, 일치: {}, 이유: {}", 
+                identifiedPerson, identifiedGroup, isMatch, matchReason);
             
             return new PersonIdentificationResponseDto(
                 request.getImageUrl(),
@@ -402,7 +413,7 @@ public class ImageAnalysisService {
      * GPT 응답에서 일치 이유 추출 (JSON 파싱)
      */
     private String extractMatchReason(String gptResponse) {
-        return extractJsonValue(gptResponse, "match_reason", "no reason provided");
+        return extractJsonValue(gptResponse, "match_reason", "분석 결과를 확인할 수 없습니다");
     }
     
     /**
@@ -410,33 +421,64 @@ public class ImageAnalysisService {
      */
     private String extractJsonValue(String gptResponse, String key, String defaultValue) {
         if (gptResponse == null || gptResponse.trim().isEmpty()) {
+            logger.warn("GPT 응답이 비어있음");
             return defaultValue;
         }
         
         try {
             // JSON에서 해당 키 필드 추출
             String searchKey = "\"" + key + "\"";
+            logger.debug("키 '{}' 검색 중, 응답 길이: {}", key, gptResponse.length());
+            
             if (gptResponse.contains(searchKey)) {
                 int keyStart = gptResponse.indexOf(searchKey);
                 int colonPos = gptResponse.indexOf(":", keyStart);
                 
+                if (colonPos == -1) {
+                    logger.warn("키 '{}' 다음에 콜론을 찾을 수 없음", key);
+                    return defaultValue;
+                }
+                
                 // boolean 값인 경우
                 if (key.equals("is_match")) {
                     String afterColon = gptResponse.substring(colonPos + 1).trim();
+                    // 쉼표나 괄호 제거
+                    afterColon = afterColon.replaceAll("[,}\\s].*", "");
+                    
                     if (afterColon.startsWith("true")) {
                         return "true";
                     } else if (afterColon.startsWith("false")) {
                         return "false";
                     }
+                    logger.warn("is_match 값을 파싱할 수 없음: {}", afterColon);
                 } else {
                     // 문자열 값인 경우
-                    int valueStart = gptResponse.indexOf("\"", colonPos) + 1;
-                    int valueEnd = gptResponse.indexOf("\"", valueStart);
+                    String afterColon = gptResponse.substring(colonPos + 1).trim();
                     
-                    if (valueStart > 0 && valueEnd > valueStart) {
-                        return gptResponse.substring(valueStart, valueEnd);
+                    // 따옴표로 감싸진 문자열 찾기
+                    int valueStart = afterColon.indexOf("\"");
+                    if (valueStart != -1) {
+                        valueStart += 1; // 따옴표 다음부터
+                        int valueEnd = afterColon.indexOf("\"", valueStart);
+                        
+                        if (valueEnd > valueStart) {
+                            String result = afterColon.substring(valueStart, valueEnd);
+                            logger.debug("키 '{}' 값 추출 성공: {}", key, result);
+                            return result;
+                        }
                     }
+                    
+                    // 따옴표가 없는 경우 (쉼표나 괄호까지)
+                    String value = afterColon.replaceAll("^[\\s\"]*", "").replaceAll("[,}\\s\"]*$", "");
+                    if (!value.isEmpty() && !value.equals("null")) {
+                        logger.debug("키 '{}' 값 추출 (따옴표 없음): {}", key, value);
+                        return value;
+                    }
+                    
+                    logger.warn("키 '{}' 값을 파싱할 수 없음, afterColon: {}", key, afterColon);
                 }
+            } else {
+                logger.warn("키 '{}'를 응답에서 찾을 수 없음", key);
             }
         } catch (Exception e) {
             logger.warn("JSON 파싱 중 오류 (key: {}): {}", key, e.getMessage());

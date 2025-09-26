@@ -194,15 +194,18 @@
     <div class="container">
         <h1>📸 Image Analysis Service</h1>
         
-        <!-- 이미지 분석 메인 콘텐츠 -->
-        <div id="image-analysis-content">
-            <!-- 파일 업로드 섹션 -->
-            <div id="upload-section" class="tab-content">
-                <div class="form-group">
-                    <label for="imageFile">이미지 파일을 선택하세요:</label>
-                    <input type="file" id="imageFile" accept="image/*" onchange="previewUploadedFile()">
-                    <img id="uploadPreview" class="image-preview" style="display: none;" alt="Upload Preview">
-                </div>
+        <!-- 탭 메뉴 -->
+        <div class="tab-menu">
+            <button class="tab-btn active" onclick="switchTab('single')">단일 이미지 분석</button>
+            <button class="tab-btn" onclick="switchTab('idol')">아이돌 이미지 업로드</button>
+        </div>
+        
+        <!-- 단일 이미지 분석 탭 -->
+        <div id="single-tab" class="tab-content">
+            <div class="form-group">
+                <label for="imageFile">이미지 파일을 선택하세요:</label>
+                <input type="file" id="imageFile" accept="image/*" onchange="previewUploadedFile()">
+                <img id="uploadPreview" class="image-preview" style="display: none;" alt="Upload Preview">
             </div>
             
             <div class="form-group">
@@ -215,10 +218,55 @@
                 <input type="text" id="favoriteGroup" placeholder="예: seventeen, bts, blackpink">
             </div>
             
-            <button onclick="performAnalysis()" id="analyzeBtn">🔍 인물 분석하기</button>
+            <button onclick="performSingleAnalysis()" id="analyzeBtn">🔍 인물 분석하기</button>
+        </div>
+        
+        <!-- 아이돌 이미지 업로드 탭 -->
+        <div id="idol-tab" class="tab-content" style="display: none;">
+            <div class="form-group">
+                <label for="idolName">아이돌 이름 (필수):</label>
+                <input type="text" id="idolName" placeholder="예: 정한, 아이유, 정국" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="groupName">그룹명 (필수):</label>
+                <input type="text" id="groupName" placeholder="예: SEVENTEEN, 솔로, BTS" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="idolImages">이미지 3장을 선택하세요 (서로 다른 사진이어야 함):</label>
+                <input type="file" id="idolImages" accept="image/*" multiple onchange="previewIdolImages()" required>
+                <div id="idolImagePreviews" style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;"></div>
+            </div>
+            
+            <button onclick="performIdolUpload()" id="idolUploadBtn">📸 아이돌 이미지 업로드</button>
+            
+            <!-- 기존 이미지 조회 버튼 -->
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
+                <button onclick="loadExistingImages()" id="loadImagesBtn" style="background: #17a2b8; margin-right: 10px;">📂 기존 이미지 보기</button>
+                <button onclick="clearExistingImages()" id="clearImagesBtn" style="background: #6c757d; margin-right: 10px;">🗑️ 이미지 목록 지우기</button>
+                <button onclick="cleanupBrokenImages()" id="cleanupBtn" style="background: #ffc107; color: #212529;">🔧 깨진 이미지 정리</button>
+            </div>
+        </div>
             
             <div class="loading" id="imageLoading" style="display: none;">
                 <p>📸 Google Lens로 이미지를 분석하고 있습니다...</p>
+            </div>
+            
+            <!-- 실시간 진행 상황 표시 -->
+            <div id="progressContainer" style="display: none; margin-top: 20px;">
+                <div style="background: #f8f9fa; border-radius: 5px; padding: 15px;">
+                    <h4>📊 실시간 진행 상황</h4>
+                    <div id="progressLog" style="max-height: 300px; overflow-y: auto; background: white; padding: 10px; border-radius: 3px; font-family: monospace; font-size: 12px; line-height: 1.4;"></div>
+                </div>
+            </div>
+            
+            <!-- 기존 이미지 표시 섹션 -->
+            <div id="existingImagesContainer" style="display: none; margin-top: 20px;">
+                <div style="background: #e7f3ff; border-radius: 5px; padding: 15px; border: 1px solid #007bff;">
+                    <h4>💾 DB에 저장된 기존 이미지들</h4>
+                    <div id="existingImagesList"></div>
+                </div>
             </div>
             
             <div id="imageResponse" class="response" style="display: none;"></div>
@@ -255,6 +303,21 @@
     </div>
 
     <script>
+        // 탭 전환
+        function switchTab(tabName) {
+            // 모든 탭 버튼 비활성화
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            // 모든 탭 콘텐츠 숨기기
+            document.querySelectorAll('.tab-content').forEach(content => content.style.display = 'none');
+            
+            // 선택된 탭 활성화
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-tab').style.display = 'block';
+            
+            // 결과 초기화
+            clearResults();
+        }
+        
         // 결과 초기화
         function clearResults() {
             document.getElementById('imageResponse').style.display = 'none';
@@ -262,9 +325,469 @@
             document.getElementById('matchResult').style.display = 'none';
         }
         
-        // 분석 수행 (파일 업로드만)
-        async function performAnalysis() {
+        // 단일 이미지 분석 수행
+        async function performSingleAnalysis() {
             await uploadAndAnalyze();
+        }
+        
+        // 아이돌 이미지 미리보기
+        function previewIdolImages() {
+            const fileInput = document.getElementById('idolImages');
+            const previewContainer = document.getElementById('idolImagePreviews');
+            
+            previewContainer.innerHTML = '';
+            
+            if (fileInput.files && fileInput.files.length > 0) {
+                if (fileInput.files.length !== 3) {
+                    alert('정확히 3장의 이미지를 선택해주세요.');
+                    fileInput.value = '';
+                    return;
+                }
+                
+                Array.from(fileInput.files).forEach((file, index) => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const img = document.createElement('img');
+                        img.src = e.target.result;
+                        img.className = 'image-preview';
+                        img.style.maxWidth = '150px';
+                        img.style.maxHeight = '150px';
+                        img.alt = `Preview ${index + 1}`;
+                        
+                        const container = document.createElement('div');
+                        container.style.textAlign = 'center';
+                        container.appendChild(img);
+                        
+                        const label = document.createElement('p');
+                        label.textContent = `이미지 ${index + 1}`;
+                        label.style.margin = '5px 0';
+                        label.style.fontSize = '12px';
+                        container.appendChild(label);
+                        
+                        previewContainer.appendChild(container);
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+        }
+        
+        // 아이돌 이미지 업로드 수행
+        async function performIdolUpload() {
+            const idolName = document.getElementById('idolName').value.trim();
+            const groupName = document.getElementById('groupName').value.trim();
+            const fileInput = document.getElementById('idolImages');
+            const uploadBtn = document.getElementById('idolUploadBtn');
+            const loading = document.getElementById('imageLoading');
+            const responseDiv = document.getElementById('imageResponse');
+            const detailsDiv = document.getElementById('analysisDetails');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressLog = document.getElementById('progressLog');
+            
+            if (!idolName || !groupName) {
+                alert('아이돌 이름과 그룹명을 모두 입력해주세요.');
+                return;
+            }
+            
+            if (!fileInput.files || fileInput.files.length !== 3) {
+                alert('정확히 3장의 이미지를 선택해주세요.');
+                return;
+            }
+            
+            // 파일 크기 검사
+            for (let i = 0; i < fileInput.files.length; i++) {
+                if (fileInput.files[i].size > 10 * 1024 * 1024) {
+                    alert(`${i + 1}번째 파일 크기가 10MB를 초과합니다.`);
+                    return;
+                }
+                
+                if (!fileInput.files[i].type.startsWith('image/')) {
+                    alert(`${i + 1}번째 파일이 이미지 파일이 아닙니다.`);
+                    return;
+                }
+            }
+            
+            // 세션 ID 생성
+            const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            
+            // UI 상태 변경
+            uploadBtn.disabled = true;
+            loading.style.display = 'block';
+            loading.querySelector('p').textContent = '📸 3장의 이미지를 분석하고 있습니다...';
+            responseDiv.style.display = 'none';
+            detailsDiv.style.display = 'none';
+            progressContainer.style.display = 'block';
+            progressLog.innerHTML = '';
+            
+            // SSE 연결 설정
+            const eventSource = new EventSource(`/api/idol/progress/${sessionId}`);
+            
+            eventSource.onmessage = function(event) {
+                console.log('SSE message:', event);
+            };
+            
+            eventSource.addEventListener('progress', function(event) {
+                const progressData = JSON.parse(event.data);
+                const timestamp = new Date(progressData.timestamp).toLocaleTimeString();
+                const logEntry = `[${timestamp}] [${progressData.step.toUpperCase()}] ${progressData.message}`;
+                
+                progressLog.innerHTML += `<div style="margin-bottom: 2px; color: #333;">${logEntry}</div>`;
+                progressLog.scrollTop = progressLog.scrollHeight;
+            });
+            
+            eventSource.addEventListener('complete', function(event) {
+                const data = JSON.parse(event.data);
+                progressLog.innerHTML += `<div style="margin-bottom: 2px; color: #28a745; font-weight: bold;">[완료] 모든 과정이 성공적으로 완료되었습니다!</div>`;
+                progressLog.scrollTop = progressLog.scrollHeight;
+                
+                showIdolUploadResponse(data, 'success');
+                showIdolAnalysisDetails(data);
+                
+                // 기존 이미지 목록이 표시되어 있다면 자동으로 새로고침
+                const existingContainer = document.getElementById('existingImagesContainer');
+                if (existingContainer.style.display !== 'none') {
+                    setTimeout(() => {
+                        loadExistingImages();
+                    }, 1000); // 1초 후 새로고침
+                }
+                
+                eventSource.close();
+                uploadBtn.disabled = false;
+                loading.style.display = 'none';
+            });
+            
+            eventSource.addEventListener('error', function(event) {
+                const errorMsg = typeof event.data === 'string' ? event.data : '알 수 없는 오류가 발생했습니다.';
+                progressLog.innerHTML += `<div style="margin-bottom: 2px; color: #dc3545; font-weight: bold;">[오류] ${errorMsg}</div>`;
+                progressLog.scrollTop = progressLog.scrollHeight;
+                
+                showIdolUploadResponse(errorMsg, 'error');
+                
+                eventSource.close();
+                uploadBtn.disabled = false;
+                loading.style.display = 'none';
+            });
+            
+            eventSource.onerror = function(event) {
+                console.error('SSE connection error:', event);
+                progressLog.innerHTML += `<div style="margin-bottom: 2px; color: #dc3545;">[연결 오류] 서버와의 연결에 문제가 발생했습니다.</div>`;
+                progressLog.scrollTop = progressLog.scrollHeight;
+            };
+            
+            try {
+                const formData = new FormData();
+                formData.append('idolName', idolName);
+                formData.append('groupName', groupName);
+                formData.append('sessionId', sessionId);
+                
+                for (let i = 0; i < fileInput.files.length; i++) {
+                    formData.append('images', fileInput.files[i]);
+                }
+                
+                const response = await fetch('/api/idol/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                // SSE에서 결과를 처리하므로 여기서는 오류만 처리
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || '서버 오류');
+                }
+                
+            } catch (error) {
+                console.error('Error:', error);
+                progressLog.innerHTML += `<div style="margin-bottom: 2px; color: #dc3545; font-weight: bold;">[네트워크 오류] ${error.message}</div>`;
+                progressLog.scrollTop = progressLog.scrollHeight;
+                
+                showIdolUploadResponse(`네트워크 오류: ${error.message}`, 'error');
+                
+                eventSource.close();
+                uploadBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+        
+        // 아이돌 업로드 응답 표시
+        function showIdolUploadResponse(data, type) {
+            const responseDiv = document.getElementById('imageResponse');
+            
+            if (typeof data === 'string') {
+                responseDiv.textContent = data;
+            } else {
+                responseDiv.textContent = `✅ ${data.message}\n⏱️ 총 처리 시간: ${data.totalProcessingTime}ms\n📊 처리된 이미지: ${data.results ? data.results.length : 0}장`;
+            }
+            
+            responseDiv.className = `response ${type}`;
+            responseDiv.style.display = 'block';
+        }
+        
+        // 아이돌 분석 상세 결과 표시
+        function showIdolAnalysisDetails(data) {
+            if (!data.results || data.results.length === 0) return;
+            
+            const detailsDiv = document.getElementById('analysisDetails');
+            const identificationDiv = document.getElementById('identificationResult');
+            const titlesDiv = document.getElementById('extractedTitles');
+            const queriesDiv = document.getElementById('extractedQueries');
+            const analysisDiv = document.getElementById('gptAnalysis');
+            
+            // 전체 결과 요약
+            const matchedCount = data.results.filter(r => r.match).length;
+            let summaryHtml = '<h4>📊 업로드 결과 요약</h4>';
+            summaryHtml += `<p><strong>성공:</strong> ${data.success ? '✅ 성공' : '❌ 실패'}</p>`;
+            summaryHtml += `<p><strong>처리된 이미지:</strong> ${data.results.length}장</p>`;
+            summaryHtml += `<p><strong>일치한 이미지:</strong> ${matchedCount}장</p>`;
+            summaryHtml += `<p><strong>총 처리 시간:</strong> ${data.totalProcessingTime}ms</p>`;
+            
+            // 각 이미지별 상세 결과
+            summaryHtml += '<h4>📸 업로드한 이미지별 분석 결과</h4>';
+            data.results.forEach((result, index) => {
+                const borderColor = result.match ? '#28a745' : '#dc3545';
+                const bgColor = result.match ? '#d4edda' : '#f8d7da';
+                summaryHtml += `
+                    <div style="border: 2px solid ${borderColor}; background-color: ${bgColor}; padding: 15px; margin: 10px 0; border-radius: 8px;">
+                        <h5 style="margin-top: 0;">이미지 ${index + 1}: ${result.fileName} ${result.match ? '✅' : '❌'}</h5>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <img src="${result.imageUrl}" alt="업로드된 이미지" style="max-width: 150px; max-height: 150px; border-radius: 5px; object-fit: cover;">
+                            <div>
+                                <p><strong>식별된 인물:</strong> ${result.identifiedPerson}</p>
+                                <p><strong>식별된 그룹:</strong> ${result.identifiedGroup}</p>
+                                <p><strong>일치 여부:</strong> ${result.match ? '✅ 일치 (DB에 저장됨)' : '❌ 불일치 (저장 안됨)'}</p>
+                                <p><strong>이유:</strong> ${result.matchReason}</p>
+                                <p><strong>처리 시간:</strong> ${result.processingTime}ms</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            // DB에 저장된 기존 이미지들 표시
+            if (data.existingImages && data.existingImages.length > 0) {
+                summaryHtml += '<h4>💾 DB에 저장된 모든 이미지들</h4>';
+                summaryHtml += `<p style="color: #666; margin-bottom: 15px;">총 ${data.existingImages.length}개의 이미지가 DB에 저장되어 있습니다.</p>`;
+                
+                data.existingImages.forEach((image, index) => {
+                    const uploadDate = new Date(image.uploadedAt).toLocaleString('ko-KR');
+                    summaryHtml += `
+                        <div style="border: 1px solid #007bff; background-color: #e7f3ff; padding: 12px; margin: 8px 0; border-radius: 6px;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <img src="${image.imageUrl}" alt="DB 저장 이미지" style="max-width: 100px; max-height: 100px; border-radius: 4px; object-fit: cover;">
+                                <div style="flex: 1;">
+                                    <p style="margin: 2px 0;"><strong>ID:</strong> ${image.id}</p>
+                                    <p style="margin: 2px 0;"><strong>파일명:</strong> ${image.originalFileName}</p>
+                                    <p style="margin: 2px 0;"><strong>업로드 시간:</strong> ${uploadDate}</p>
+                                    <p style="margin: 2px 0;"><strong>파일 크기:</strong> ${(image.fileSize / 1024).toFixed(1)} KB</p>
+                                    <p style="margin: 2px 0;"><strong>해시값:</strong> ${image.pHash ? image.pHash.substring(0, 12) + '...' : 'N/A'}</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            } else {
+                summaryHtml += '<h4>💾 DB에 저장된 이미지</h4>';
+                summaryHtml += '<p style="color: #666;">아직 DB에 저장된 이미지가 없습니다.</p>';
+            }
+            
+            identificationDiv.innerHTML = summaryHtml;
+            
+            // 기타 정보는 첫 번째 이미지 기준으로 표시
+            const firstResult = data.results[0];
+            titlesDiv.innerHTML = '<p style="color: #6c757d;">아이돌 업로드 모드에서는 제목 추출을 하지 않습니다.</p>';
+            queriesDiv.innerHTML = '<p style="color: #6c757d;">아이돌 업로드 모드에서는 검색어 추출을 하지 않습니다.</p>';
+            analysisDiv.innerHTML = `<p style="white-space: pre-wrap;">${firstResult.gptAnalysis}</p>`;
+            
+            detailsDiv.style.display = 'block';
+        }
+        
+        // 기존 이미지 불러오기
+        async function loadExistingImages() {
+            const idolName = document.getElementById('idolName').value.trim();
+            const groupName = document.getElementById('groupName').value.trim();
+            const loadBtn = document.getElementById('loadImagesBtn');
+            const container = document.getElementById('existingImagesContainer');
+            const imagesList = document.getElementById('existingImagesList');
+            
+            if (!idolName || !groupName) {
+                alert('아이돌 이름과 그룹명을 먼저 입력해주세요.');
+                return;
+            }
+            
+            loadBtn.disabled = true;
+            loadBtn.textContent = '📂 불러오는 중...';
+            
+            try {
+                const url = `/api/idol/images/json?idolName=${encodeURIComponent(idolName)}&groupName=${encodeURIComponent(groupName)}`;
+                console.log('요청 URL:', url);
+                
+                const response = await fetch(url);
+                console.log('응답 상태:', response.status, response.statusText);
+                
+                if (response.ok) {
+                    const images = await response.json();
+                    console.log('받은 이미지 데이터:', images);
+                    displayExistingImages(images, idolName, groupName);
+                    container.style.display = 'block';
+                } else {
+                    const errorText = await response.text();
+                    console.error('서버 오류:', response.status, errorText);
+                    alert(`이미지를 불러오는데 실패했습니다. (${response.status}: ${response.statusText})`);
+                }
+            } catch (error) {
+                console.error('네트워크 오류:', error);
+                alert(`네트워크 오류가 발생했습니다: ${error.message}`);
+            } finally {
+                loadBtn.disabled = false;
+                loadBtn.textContent = '📂 기존 이미지 보기';
+            }
+        }
+        
+        // 기존 이미지 표시
+        function displayExistingImages(images, idolName, groupName) {
+            const imagesList = document.getElementById('existingImagesList');
+            
+            if (!images || images.length === 0) {
+                imagesList.innerHTML = `
+                    <p style="color: #666; text-align: center; padding: 20px;">
+                        ${idolName} (${groupName})의 저장된 이미지가 없습니다.
+                    </p>
+                `;
+                return;
+            }
+            
+            let html = `<p style="color: #666; margin-bottom: 15px;">총 ${images.length}개의 이미지가 저장되어 있습니다.</p>`;
+            
+            images.forEach((image, index) => {
+                try {
+                    const uploadDate = image.uploadedAt ? new Date(image.uploadedAt).toLocaleString('ko-KR') : '알 수 없음';
+                    const imageUrl = image.imageUrl || '';
+                    const fileName = image.originalFileName || '알 수 없음';
+                    const fileSize = image.fileSize ? (image.fileSize / 1024).toFixed(1) : '0';
+                    const pHash = image.pHash ? image.pHash.substring(0, 16) + '...' : 'N/A';
+                    const isVerified = image.isVerified !== undefined ? image.isVerified : false;
+                    
+                    html += `
+                        <div style="border: 1px solid #007bff; background-color: white; padding: 12px; margin: 8px 0; border-radius: 6px;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                ${imageUrl ? 
+                                    `<img src="${imageUrl}" alt="DB 저장 이미지" style="max-width: 120px; max-height: 120px; border-radius: 4px; object-fit: cover; cursor: pointer;" onclick="window.open('${imageUrl}', '_blank')" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMjAiIGhlaWdodD0iMTIwIiBmaWxsPSIjZjBmMGYwIi8+Cjx0ZXh0IHg9IjYwIiB5PSI2MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OTk5OSI+이미지 없음</text>Cjwvc3ZnPg=='; this.style.cursor='default'; this.onclick=null;">` :
+                                    `<div style="width: 120px; height: 120px; background: #f0f0f0; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px;">이미지 없음</div>`
+                                }
+                                <div style="flex: 1;">
+                                    <p style="margin: 2px 0; font-weight: bold; color: #007bff;">ID: ${image.id || 'N/A'}</p>
+                                    <p style="margin: 2px 0;"><strong>파일명:</strong> ${fileName}</p>
+                                    <p style="margin: 2px 0;"><strong>업로드 시간:</strong> ${uploadDate}</p>
+                                    <p style="margin: 2px 0;"><strong>파일 크기:</strong> ${fileSize} KB</p>
+                                    <p style="margin: 2px 0;"><strong>해시값:</strong> ${pHash}</p>
+                                    <p style="margin: 2px 0;"><strong>검증 상태:</strong> ${isVerified ? '✅ 검증됨' : '❌ 미검증'}</p>
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 5px;">
+                                    <button onclick="deleteImage(${image.id})" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 12px;">🗑️ 삭제</button>
+                                    ${imageUrl ? 
+                                        `<button onclick="window.open('${imageUrl}', '_blank')" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 12px;">🔍 크게보기</button>` :
+                                        `<button disabled style="background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: not-allowed; font-size: 12px;">이미지 없음</button>`
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } catch (error) {
+                    console.error('이미지 표시 중 오류:', error, image);
+                    html += `
+                        <div style="border: 1px solid #dc3545; background-color: #f8d7da; padding: 12px; margin: 8px 0; border-radius: 6px;">
+                            <p style="color: #721c24; margin: 0;">이미지 데이터 오류 (ID: ${image.id || 'N/A'})</p>
+                        </div>
+                    `;
+                }
+            });
+            
+            imagesList.innerHTML = html;
+        }
+        
+        // 기존 이미지 목록 지우기
+        function clearExistingImages() {
+            const container = document.getElementById('existingImagesContainer');
+            const imagesList = document.getElementById('existingImagesList');
+            
+            container.style.display = 'none';
+            imagesList.innerHTML = '';
+        }
+        
+        // 이미지 URL 유효성 검사
+        async function checkImageUrl(url) {
+            try {
+                const response = await fetch(url, { method: 'HEAD' });
+                return response.ok;
+            } catch (error) {
+                return false;
+            }
+        }
+        
+        // 이미지 삭제
+        async function deleteImage(imageId) {
+            if (!confirm('정말로 이 이미지를 삭제하시겠습니까?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/idol/images/${imageId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    alert('이미지가 삭제되었습니다.');
+                    // 목록 새로고침
+                    loadExistingImages();
+                } else {
+                    alert('이미지 삭제에 실패했습니다.');
+                }
+            } catch (error) {
+                console.error('Error deleting image:', error);
+                alert('네트워크 오류가 발생했습니다.');
+            }
+        }
+        
+        // 깨진 이미지 정리 기능
+        async function cleanupBrokenImages() {
+            const idolName = document.getElementById('idolName').value.trim();
+            const groupName = document.getElementById('groupName').value.trim();
+            
+            if (!idolName || !groupName) {
+                alert('아이돌 이름과 그룹명을 먼저 입력해주세요.');
+                return;
+            }
+            
+            if (!confirm('깨진 이미지들을 DB에서 정리하시겠습니까?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/idol/images/json?idolName=${encodeURIComponent(idolName)}&groupName=${encodeURIComponent(groupName)}`);
+                if (response.ok) {
+                    const images = await response.json();
+                    let brokenCount = 0;
+                    
+                    for (const image of images) {
+                        if (image.imageUrl) {
+                            const isValid = await checkImageUrl(image.imageUrl);
+                            if (!isValid) {
+                                // 깨진 이미지 삭제
+                                const deleteResponse = await fetch(`/api/idol/images/${image.id}`, {
+                                    method: 'DELETE'
+                                });
+                                if (deleteResponse.ok) {
+                                    brokenCount++;
+                                }
+                            }
+                        }
+                    }
+                    
+                    alert(`${brokenCount}개의 깨진 이미지를 정리했습니다.`);
+                    loadExistingImages(); // 목록 새로고침
+                }
+            } catch (error) {
+                console.error('Error cleaning up images:', error);
+                alert('이미지 정리 중 오류가 발생했습니다.');
+            }
         }
         
         // 업로드된 파일 미리보기
