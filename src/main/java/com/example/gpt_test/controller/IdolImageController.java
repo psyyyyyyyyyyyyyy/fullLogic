@@ -156,4 +156,84 @@ public class IdolImageController {
     public ResponseEntity<String> testData() {
         return ResponseEntity.ok("{\"message\": \"테스트 성공\", \"timestamp\": \"" + System.currentTimeMillis() + "\"}");
     }
+    
+    // === 새로운 사용자별/그룹별 엔드포인트 ===
+    
+    /**
+     * 내 개인 갤러리 이미지 조회
+     */
+    @GetMapping("/my-gallery")
+    @Operation(summary = "내 개인 갤러리", description = "현재 사용자의 개인 갤러리 이미지를 조회합니다.")
+    public ResponseEntity<List<IdolImage>> getMyPersonalGallery() {
+        List<IdolImage> images = idolImageService.getMyPersonalGallery();
+        return ResponseEntity.ok(images);
+    }
+    
+    /**
+     * 내가 업로드한 특정 아이돌 이미지 조회
+     */
+    @GetMapping("/my-images")
+    @Operation(summary = "내 특정 아이돌 이미지", description = "현재 사용자가 업로드한 특정 아이돌의 이미지를 조회합니다.")
+    public ResponseEntity<List<IdolImage>> getMyIdolImages(
+            @Parameter(description = "아이돌 이름", required = true)
+            @RequestParam @NotBlank String idolName,
+            
+            @Parameter(description = "그룹명", required = true)
+            @RequestParam @NotBlank String groupName) {
+        
+        List<IdolImage> images = idolImageService.getMyIdolImages(idolName, groupName);
+        return ResponseEntity.ok(images);
+    }
+    
+    /**
+     * 그룹 공유 DB 이미지 조회
+     */
+    @GetMapping("/group-shared")
+    @Operation(summary = "그룹 공유 이미지", description = "특정 그룹_아이돌의 공유 DB 이미지를 조회합니다.")
+    public ResponseEntity<List<IdolImage>> getGroupSharedImages(
+            @Parameter(description = "아이돌 이름", required = true)
+            @RequestParam @NotBlank String idolName,
+            
+            @Parameter(description = "그룹명", required = true)
+            @RequestParam @NotBlank String groupName) {
+        
+        List<IdolImage> images = idolImageService.getGroupSharedImages(groupName, idolName);
+        return ResponseEntity.ok(images);
+    }
+    
+    /**
+     * 모든 그룹 공유 DB 이미지 조회
+     */
+    @GetMapping("/all-group-shared")
+    @Operation(summary = "모든 그룹 공유 이미지", description = "모든 그룹의 공유 DB 이미지를 조회합니다.")
+    public ResponseEntity<List<IdolImage>> getAllGroupSharedImages() {
+        List<IdolImage> images = idolImageService.getAllGroupSharedImages();
+        return ResponseEntity.ok(images);
+    }
+    
+    /**
+     * 내가 업로드한 모든 이미지 조회
+     */
+    @GetMapping("/my-all-images")
+    @Operation(summary = "내 모든 이미지", description = "현재 사용자가 업로드한 모든 이미지를 조회합니다.")
+    public ResponseEntity<List<IdolImage>> getMyAllImages() {
+        List<IdolImage> images = idolImageService.getMyAllImages();
+        return ResponseEntity.ok(images);
+    }
+    
+    /**
+     * 특정 아이돌의 모든 사용자 이미지 조회 (업로더 정보 포함)
+     */
+    @GetMapping("/idol-gallery")
+    @Operation(summary = "특정 아이돌 갤러리", description = "특정 아이돌의 모든 사용자가 업로드한 이미지를 조회합니다.")
+    public ResponseEntity<List<IdolImage>> getIdolGallery(
+            @Parameter(description = "아이돌 이름", required = true)
+            @RequestParam @NotBlank String idolName,
+            
+            @Parameter(description = "그룹명", required = true)
+            @RequestParam @NotBlank String groupName) {
+        
+        List<IdolImage> images = idolImageService.getIdolGalleryWithUploaders(idolName, groupName);
+        return ResponseEntity.ok(images);
+    }
 }

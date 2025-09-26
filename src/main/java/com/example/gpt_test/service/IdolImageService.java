@@ -3,9 +3,13 @@ package com.example.gpt_test.service;
 import com.example.gpt_test.dto.IdolUploadResponseDto;
 import com.example.gpt_test.dto.PersonIdentificationResponseDto;
 import com.example.gpt_test.entity.IdolImage;
+import com.example.gpt_test.entity.User;
+import com.example.gpt_test.entity.GroupIdol;
 import com.example.gpt_test.repository.IdolImageRepository;
 import com.example.gpt_test.util.ImageHashUtil;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -31,13 +35,34 @@ public class IdolImageService {
     @Autowired
     private ProgressService progressService;
     
+    @Autowired
+    private UserService userService;
+    
+    @Autowired
+    private GroupIdolService groupIdolService;
+    
     /**
-     * 3장의 아이돌 이미지를 업로드하고 분석
+     * 3장의 아이돌 이미지를 업로드하고 분석 (사용자별 개인 갤러리 + 그룹 DB 저장)
      */
     public IdolUploadResponseDto uploadAndAnalyzeIdolImages(String idolName, String groupName, MultipartFile[] images, String sessionId) {
         long startTime = System.currentTimeMillis();
         
         try {
+            // 현재 인증된 사용자 조회
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                progressService.sendError(sessionId, "인증되지 않은 사용자입니다.");
+                return new IdolUploadResponseDto(false, "인증되지 않은 사용자입니다.");
+            }
+            
+            String username = authentication.getName();
+            User currentUser = userService.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+            
+            // GroupIdol 조회 또는 생성
+            GroupIdol groupIdol = groupIdolService.findOrCreateGroupIdol(groupName, idolName);
+            
+            progressService.sendProgress(sessionId, "validation", "👤 사용자: " + username + ", 그룹_아이돌: " + groupIdol.getGroupIdolKey());
             progressService.sendProgress(sessionId, "validation", "📋 업로드된 파일들을 검증하고 있습니다...");
             
             // 1. 기본 검증
@@ -59,12 +84,12 @@ public class IdolImageService {
                 progressService.sendProgress(sessionId, "validation", "✅ " + (i + 1) + "번째 이미지 파일 유효성 확인 완료");
             }
             
-            // 3. pHash 생성 및 중복 검사
+            // 3. pHash 생성 및 중복 검사 (개인 갤러리 내에서만)
             progressService.sendProgress(sessionId, "hash", "🔐 이미지 해시값을 생성하고 중복을 검사하고 있습니다...");
             List<String> newHashes = new ArrayList<>();
-            List<String> existingHashes = idolImageRepository.findAllPHashes();
+            List<String> userExistingHashes = idolImageRepository.findPHashesByUser(currentUser);
             
-            progressService.sendProgress(sessionId, "hash", "📊 기존 DB에서 " + existingHashes.size() + "개의 해시값을 가져왔습니다.");
+            progressService.sendProgress(sessionId, "hash", "📊 내 갤러리에서 " + userExistingHashes.size() + "개의 해시값을 가져왔습니다.");
             
             for (int i = 0; i < images.length; i++) {
                 try {
@@ -72,15 +97,15 @@ public class IdolImageService {
                     String pHash = imageHashUtil.generatePHash(images[i]);
                     progressService.sendProgress(sessionId, "hash", "✅ " + (i + 1) + "번째 이미지 해시값 생성 완료: " + pHash.substring(0, 8) + "...");
                     
-                    // 기존 DB와 중복 검사
-                    progressService.sendProgress(sessionId, "hash", "🔍 " + (i + 1) + "번째 이미지의 DB 중복 검사 중...");
-                    String duplicateHash = imageHashUtil.findDuplicateHash(pHash, existingHashes);
+                    // 내 갤러리와 중복 검사
+                    progressService.sendProgress(sessionId, "hash", "🔍 " + (i + 1) + "번째 이미지의 내 갤러리 중복 검사 중...");
+                    String duplicateHash = imageHashUtil.findDuplicateHash(pHash, userExistingHashes);
                     if (duplicateHash != null) {
-                        String errorMsg = (i + 1) + "번째 이미지가 이미 DB에 존재하는 이미지와 유사합니다.";
+                        String errorMsg = (i + 1) + "번째 이미지가 이미 내 갤러리에 존재하는 이미지와 유사합니다.";
                         progressService.sendError(sessionId, errorMsg);
                         return new IdolUploadResponseDto(false, errorMsg);
                     }
-                    progressService.sendProgress(sessionId, "hash", "✅ " + (i + 1) + "번째 이미지 DB 중복 검사 통과");
+                    progressService.sendProgress(sessionId, "hash", "✅ " + (i + 1) + "번째 이미지 내 갤러리 중복 검사 통과");
                     
                     // 업로드하는 이미지들 간의 중복 검사
                     progressService.sendProgress(sessionId, "hash", "🔍 " + (i + 1) + "번째 이미지의 업로드 이미지 간 중복 검사 중...");
@@ -145,30 +170,39 @@ public class IdolImageService {
                         analysisResult.isMatch() ? "✅" : "❌");
                     progressService.sendProgress(sessionId, "analysis", resultSummary);
                     
-                    // 일치하는 경우에만 즉시 DB에 저장
+                    // 모든 이미지를 개인 갤러리에 저장 (일치 여부와 관계없이)
+                    progressService.sendProgress(sessionId, "save", "💾 " + (i + 1) + "번째 이미지를 개인 갤러리에 저장합니다...");
+                    
+                    IdolImage idolImage = new IdolImage(
+                        idolName,
+                        groupName,
+                        result.getImageUrl(),
+                        result.getpHash(),
+                        result.getFileName(),
+                        images[i].getSize(),
+                        images[i].getContentType(),
+                        currentUser,
+                        groupIdol
+                    );
+                    
+                    idolImage.setGptAnalysis(result.getGptAnalysis());
+                    
+                    // GPT 분석 결과가 일치하면 그룹 DB에도 추가
                     if (analysisResult.isMatch()) {
-                        progressService.sendProgress(sessionId, "save", "💾 " + (i + 1) + "번째 이미지가 일치하므로 DB에 저장합니다...");
+                        idolImage.addToGroupDatabase(); // isInGroupDatabase = true, isVerified = true
+                        progressService.sendProgress(sessionId, "save", "✅ " + (i + 1) + "번째 이미지가 일치하므로 그룹 DB에도 추가됩니다!");
                         
-                        IdolImage idolImage = new IdolImage(
-                            idolName,
-                            groupName,
-                            result.getImageUrl(),
-                            result.getpHash(),
-                            result.getFileName(),
-                            images[i].getSize(),
-                            images[i].getContentType()
-                        );
-                        
-                        idolImage.setGptAnalysis(result.getGptAnalysis());
-                        idolImage.setIsVerified(true);
-                        
-                        IdolImage savedImage = idolImageRepository.save(idolImage);
-                        validatedImages.add(savedImage);
-                        
-                        progressService.sendProgress(sessionId, "save", "✅ " + (i + 1) + "번째 이미지 DB 저장 완료 (ID: " + savedImage.getId() + ")");
+                        // 그룹_아이돌의 이미지 수 증가
+                        groupIdolService.incrementImageCount(groupIdol);
                     } else {
-                        progressService.sendProgress(sessionId, "validation", "❌ " + (i + 1) + "번째 이미지가 일치하지 않아 DB에 저장하지 않습니다.");
+                        idolImage.setIsVerified(false);
+                        progressService.sendProgress(sessionId, "save", "⚠️ " + (i + 1) + "번째 이미지는 개인 갤러리에만 저장됩니다.");
                     }
+                    
+                    IdolImage savedImage = idolImageRepository.save(idolImage);
+                    validatedImages.add(savedImage);
+                    
+                    progressService.sendProgress(sessionId, "save", "✅ " + (i + 1) + "번째 이미지 저장 완료 (ID: " + savedImage.getId() + ")");
                     
                 } catch (Exception e) {
                     String errorMsg = (i + 1) + "번째 이미지 분석 중 오류가 발생했습니다: " + e.getMessage();
@@ -237,14 +271,115 @@ public class IdolImageService {
     }
     
     /**
-     * 이미지 삭제
+     * 이미지 삭제 (사용자 권한 확인)
      */
     public boolean deleteImage(Long imageId) {
         try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return false;
+            }
+            
+            String username = authentication.getName();
+            User currentUser = userService.findByUsername(username).orElse(null);
+            if (currentUser == null) {
+                return false;
+            }
+            
+            // 이미지 조회 및 소유자 확인
+            IdolImage image = idolImageRepository.findById(imageId).orElse(null);
+            if (image == null || !image.getUser().getId().equals(currentUser.getId())) {
+                return false;
+            }
+            
+            // 그룹 DB에서 제거되는 경우 이미지 수 감소
+            if (image.getIsInGroupDatabase()) {
+                groupIdolService.decrementImageCount(image.getGroupIdol());
+            }
+            
             idolImageRepository.deleteById(imageId);
             return true;
         } catch (Exception e) {
             return false;
         }
+    }
+    
+    // === 새로운 사용자별/그룹별 조회 메서드 ===
+    
+    /**
+     * 현재 사용자의 개인 갤러리 이미지 조회
+     */
+    public List<IdolImage> getMyPersonalGallery() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return new ArrayList<>();
+        }
+        
+        String username = authentication.getName();
+        User currentUser = userService.findByUsername(username).orElse(null);
+        if (currentUser == null) {
+            return new ArrayList<>();
+        }
+        
+        return idolImageRepository.findByUserAndIsInPersonalGalleryTrue(currentUser);
+    }
+    
+    /**
+     * 현재 사용자의 특정 아이돌 이미지 조회
+     */
+    public List<IdolImage> getMyIdolImages(String idolName, String groupName) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return new ArrayList<>();
+        }
+        
+        String username = authentication.getName();
+        User currentUser = userService.findByUsername(username).orElse(null);
+        if (currentUser == null) {
+            return new ArrayList<>();
+        }
+        
+        return idolImageRepository.findByUserAndIdolNameAndGroupNameAndIsInPersonalGalleryTrue(
+            currentUser, idolName, groupName);
+    }
+    
+    /**
+     * 그룹 DB의 공유 이미지 조회
+     */
+    public List<IdolImage> getGroupSharedImages(String groupName, String idolName) {
+        String groupIdolKey = GroupIdol.generateGroupIdolKey(groupName, idolName);
+        return idolImageRepository.findGroupSharedImages(groupIdolKey);
+    }
+    
+    /**
+     * 모든 그룹 DB 이미지 조회
+     */
+    public List<IdolImage> getAllGroupSharedImages() {
+        return idolImageRepository.findByIsInGroupDatabaseTrueAndIsVerifiedTrue();
+    }
+    
+    /**
+     * 현재 사용자가 업로드한 모든 이미지 조회
+     */
+    public List<IdolImage> getMyAllImages() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return new ArrayList<>();
+        }
+        
+        String username = authentication.getName();
+        User currentUser = userService.findByUsername(username).orElse(null);
+        if (currentUser == null) {
+            return new ArrayList<>();
+        }
+        
+        return idolImageRepository.findByUser(currentUser);
+    }
+    
+    /**
+     * 특정 아이돌의 모든 사용자 이미지 조회 (업로더 정보 포함)
+     */
+    public List<IdolImage> getIdolGalleryWithUploaders(String idolName, String groupName) {
+        return idolImageRepository.findByIdolNameAndGroupNameWithUser(idolName, groupName);
     }
 }

@@ -55,7 +55,7 @@ public class ProgressService {
      */
     public void sendProgress(String sessionId, String step, String message, Object data) {
         CopyOnWriteArrayList<SseEmitter> sessionEmitters = emitters.get(sessionId);
-        if (sessionEmitters != null) {
+        if (sessionEmitters != null && !sessionEmitters.isEmpty()) {
             ProgressMessage progressMessage = new ProgressMessage(step, message, data, System.currentTimeMillis());
             
             sessionEmitters.removeIf(emitter -> {
@@ -64,10 +64,17 @@ public class ProgressService {
                         .name("progress")
                         .data(progressMessage));
                     return false;
-                } catch (IOException e) {
-                    return true; // 전송 실패한 emitter 제거
+                } catch (IOException | IllegalStateException e) {
+                    // 연결이 끊어졌거나 이미 완료된 emitter 제거
+                    System.out.println("SSE 연결 오류로 emitter 제거: " + e.getMessage());
+                    return true;
                 }
             });
+            
+            // 모든 emitter가 제거되었으면 세션도 제거
+            if (sessionEmitters.isEmpty()) {
+                emitters.remove(sessionId);
+            }
         }
     }
     
@@ -76,15 +83,16 @@ public class ProgressService {
      */
     public void sendComplete(String sessionId, Object result) {
         CopyOnWriteArrayList<SseEmitter> sessionEmitters = emitters.get(sessionId);
-        if (sessionEmitters != null) {
+        if (sessionEmitters != null && !sessionEmitters.isEmpty()) {
             sessionEmitters.forEach(emitter -> {
                 try {
                     emitter.send(SseEmitter.event()
                         .name("complete")
                         .data(result));
                     emitter.complete();
-                } catch (IOException e) {
-                    // 무시
+                } catch (IOException | IllegalStateException e) {
+                    System.out.println("SSE 완료 메시지 전송 오류: " + e.getMessage());
+                    // emitter가 이미 완료되었거나 연결이 끊어진 경우
                 }
             });
             emitters.remove(sessionId);
@@ -96,15 +104,16 @@ public class ProgressService {
      */
     public void sendError(String sessionId, String error) {
         CopyOnWriteArrayList<SseEmitter> sessionEmitters = emitters.get(sessionId);
-        if (sessionEmitters != null) {
+        if (sessionEmitters != null && !sessionEmitters.isEmpty()) {
             sessionEmitters.forEach(emitter -> {
                 try {
                     emitter.send(SseEmitter.event()
                         .name("error")
                         .data(error));
                     emitter.complete();
-                } catch (IOException e) {
-                    // 무시
+                } catch (IOException | IllegalStateException e) {
+                    System.out.println("SSE 오류 메시지 전송 오류: " + e.getMessage());
+                    // emitter가 이미 완료되었거나 연결이 끊어진 경우
                 }
             });
             emitters.remove(sessionId);
