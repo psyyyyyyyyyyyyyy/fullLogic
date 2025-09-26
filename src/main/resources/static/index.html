@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Analysis Service</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            resize: vertical;
+        }
+        select {
+            background: white;
+            cursor: pointer;
+        }
+        .model-select {
+            margin-bottom: 10px;
+            border-color: #007bff;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .response {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+        }
+        .response.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .response.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .links {
+            margin-top: 30px;
+            text-align: center;
+        }
+        .links a {
+            display: inline-block;
+            margin: 0 10px;
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        .links a:hover {
+            background: #1e7e34;
+        }
+        .image-preview {
+            max-width: 300px;
+            max-height: 200px;
+            margin-top: 10px;
+            border-radius: 5px;
+            border: 2px solid #ddd;
+        }
+        .result-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+        }
+        .result-section h4 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .extracted-data {
+            background: white;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        input[type="url"], input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        .match-result {
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            font-weight: bold;
+            text-align: center;
+        }
+        .match-result.match {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            color: #155724;
+        }
+        .match-result.no-match {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            color: #721c24;
+        }
+        .tab-menu {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        .tab-btn.active {
+            background: #007bff;
+            color: white;
+            border-bottom-color: #007bff;
+        }
+        .tab-btn:hover:not(.active) {
+            background: #f8f9fa;
+        }
+        input[type="file"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px dashed #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+            cursor: pointer;
+        }
+        input[type="file"]:hover {
+            border-color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📸 Image Analysis Service</h1>
+        
+        <!-- 이미지 분석 메인 콘텐츠 -->
+        <div id="image-analysis-content">
+            <!-- 파일 업로드 섹션 -->
+            <div id="upload-section" class="tab-content">
+                <div class="form-group">
+                    <label for="imageFile">이미지 파일을 선택하세요:</label>
+                    <input type="file" id="imageFile" accept="image/*" onchange="previewUploadedFile()">
+                    <img id="uploadPreview" class="image-preview" style="display: none;" alt="Upload Preview">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="favoriteName">좋아하는 인물 이름 (선택사항):</label>
+                <input type="text" id="favoriteName" placeholder="예: jeonghan, iu, jungkook">
+            </div>
+            
+            <div class="form-group">
+                <label for="favoriteGroup">좋아하는 그룹명 (선택사항):</label>
+                <input type="text" id="favoriteGroup" placeholder="예: seventeen, bts, blackpink">
+            </div>
+            
+            <button onclick="performAnalysis()" id="analyzeBtn">🔍 인물 분석하기</button>
+            
+            <div class="loading" id="imageLoading" style="display: none;">
+                <p>📸 Google Lens로 이미지를 분석하고 있습니다...</p>
+            </div>
+            
+            <div id="imageResponse" class="response" style="display: none;"></div>
+            
+            <div id="matchResult" class="match-result" style="display: none;"></div>
+            
+            <div id="analysisDetails" style="display: none;">
+                <div class="result-section">
+                    <h4>🎯 식별 결과</h4>
+                    <div id="identificationResult" class="extracted-data"></div>
+                </div>
+                
+                <div class="result-section">
+                    <h4>📝 추출된 제목들</h4>
+                    <div id="extractedTitles" class="extracted-data"></div>
+                </div>
+                
+                <div class="result-section">
+                    <h4>🔍 관련 검색어들</h4>
+                    <div id="extractedQueries" class="extracted-data"></div>
+                </div>
+                
+                <div class="result-section">
+                    <h4>🤖 GPT 분석 결과</h4>
+                    <div id="gptAnalysis" class="extracted-data"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="links">
+            <a href="/swagger-ui.html" target="_blank">📚 API 문서 (Swagger)</a>
+            <a href="/api/image/health" target="_blank">📸 Image 서비스 상태</a>
+        </div>
+    </div>
+
+    <script>
+        // 결과 초기화
+        function clearResults() {
+            document.getElementById('imageResponse').style.display = 'none';
+            document.getElementById('analysisDetails').style.display = 'none';
+            document.getElementById('matchResult').style.display = 'none';
+        }
+        
+        // 분석 수행 (파일 업로드만)
+        async function performAnalysis() {
+            await uploadAndAnalyze();
+        }
+        
+        // 업로드된 파일 미리보기
+        function previewUploadedFile() {
+            const fileInput = document.getElementById('imageFile');
+            const preview = document.getElementById('uploadPreview');
+            
+            if (fileInput.files && fileInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.src = e.target.result;
+                    preview.style.display = 'block';
+                };
+                reader.readAsDataURL(fileInput.files[0]);
+            } else {
+                preview.style.display = 'none';
+            }
+        }
+        
+        // 파일 업로드 후 분석
+        async function uploadAndAnalyze() {
+            const fileInput = document.getElementById('imageFile');
+            const favoriteName = document.getElementById('favoriteName').value.trim();
+            const favoriteGroup = document.getElementById('favoriteGroup').value.trim();
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const loading = document.getElementById('imageLoading');
+            const responseDiv = document.getElementById('imageResponse');
+            const detailsDiv = document.getElementById('analysisDetails');
+            const matchDiv = document.getElementById('matchResult');
+            
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('이미지 파일을 선택해주세요.');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            
+            // 파일 크기 검사 (10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                alert('파일 크기는 10MB를 초과할 수 없습니다.');
+                return;
+            }
+            
+            // 이미지 파일인지 검사
+            if (!file.type.startsWith('image/')) {
+                alert('이미지 파일만 업로드 가능합니다.');
+                return;
+            }
+            
+            // UI 상태 변경
+            analyzeBtn.disabled = true;
+            loading.style.display = 'block';
+            responseDiv.style.display = 'none';
+            detailsDiv.style.display = 'none';
+            matchDiv.style.display = 'none';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                if (favoriteName) formData.append('favoriteName', favoriteName);
+                if (favoriteGroup) formData.append('favoriteGroup', favoriteGroup);
+                
+                const response = await fetch('/api/image/upload-and-identify', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    showImageResponse(data, 'success');
+                    showMatchResult(data, favoriteName, favoriteGroup);
+                    showAnalysisDetails(data);
+                } else {
+                    const errorData = await response.json();
+                    showImageResponse(`업로드 및 분석 실패: ${errorData.gptAnalysis || '서버 오류'}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showImageResponse(`네트워크 오류: ${error.message}`, 'error');
+            } finally {
+                // UI 상태 복원
+                analyzeBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+        
+        
+        function showImageResponse(data, type) {
+            const responseDiv = document.getElementById('imageResponse');
+            
+            if (typeof data === 'string') {
+                responseDiv.textContent = data;
+            } else {
+                responseDiv.textContent = `🎯 식별된 인물: ${data.identifiedPerson} (${data.identifiedGroup})\n⏱️ 처리 시간: ${data.processingTime}ms`;
+            }
+            
+            responseDiv.className = `response ${type}`;
+            responseDiv.style.display = 'block';
+        }
+        
+        function showMatchResult(data, favoriteName, favoriteGroup) {
+            const matchDiv = document.getElementById('matchResult');
+            
+            if (!favoriteName && !favoriteGroup) {
+                matchDiv.style.display = 'none';
+                return;
+            }
+            
+            if (data.match) {
+                matchDiv.className = 'match-result match';
+                matchDiv.innerHTML = `✅ 일치! ${data.matchReason}`;
+            } else {
+                matchDiv.className = 'match-result no-match';
+                matchDiv.innerHTML = `❌ 불일치! ${data.matchReason}`;
+            }
+            
+            matchDiv.style.display = 'block';
+        }
+        
+        function showAnalysisDetails(data) {
+            const detailsDiv = document.getElementById('analysisDetails');
+            const identificationDiv = document.getElementById('identificationResult');
+            const titlesDiv = document.getElementById('extractedTitles');
+            const queriesDiv = document.getElementById('extractedQueries');
+            const analysisDiv = document.getElementById('gptAnalysis');
+            
+            // 식별 결과
+            identificationDiv.innerHTML = `
+                <p><strong>이름:</strong> ${data.identifiedPerson}</p>
+                <p><strong>그룹:</strong> ${data.identifiedGroup}</p>
+                <p><strong>일치 여부:</strong> ${data.match ? '✅ 일치' : '❌ 불일치'}</p>
+                <p><strong>이유:</strong> ${data.matchReason}</p>
+            `;
+            
+            // 추출된 제목들
+            if (data.extractedTitles && data.extractedTitles.length > 0) {
+                titlesDiv.innerHTML = data.extractedTitles.map((title, index) => 
+                    `<p>${index + 1}. ${title}</p>`
+                ).join('');
+            } else {
+                titlesDiv.innerHTML = '<p style="color: #6c757d;">추출된 제목이 없습니다.</p>';
+            }
+            
+            // 추출된 검색어들
+            if (data.extractedQueries && data.extractedQueries.length > 0) {
+                queriesDiv.innerHTML = data.extractedQueries.map((query, index) => 
+                    `<p>${index + 1}. ${query}</p>`
+                ).join('');
+            } else {
+                queriesDiv.innerHTML = '<p style="color: #6c757d;">추출된 검색어가 없습니다.</p>';
+            }
+            
+            // GPT 분석 결과
+            analysisDiv.innerHTML = `<p style="white-space: pre-wrap;">${data.gptAnalysis}</p>`;
+            
+            detailsDiv.style.display = 'block';
+        }
+
+    </script>
+</body>
+</html>
